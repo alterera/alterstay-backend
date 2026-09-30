@@ -85,7 +85,7 @@ export class AuthService {
     const otp = generateOtp(6);
     const otpHash = await bcrypt.hash(otp, BCRYPT_ROUNDS);
 
-    await this.prisma.otpVerification.create({
+    const otpRecord = await this.prisma.otpVerification.create({
       data: {
         userId: existingUser?.id ?? null,
         identifier: phone,
@@ -97,7 +97,11 @@ export class AuthService {
     });
 
     try {
-      await this.whatsappOtp.sendOtp(phone, otp);
+      await this.whatsappOtp.sendOtp(
+        phone,
+        otp,
+        `alterstay-otp-${otpRecord.id}`,
+      );
     } catch (error) {
       this.logger.error(`WhatsApp OTP delivery failed for ${phone}`);
       throw error;

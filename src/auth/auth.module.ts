@@ -8,6 +8,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { RateLimitService } from './rate-limit/rate-limit.service';
 import { SavedGuestsController } from './saved-guests.controller';
 import { SavedGuestsService } from './saved-guests.service';
+import { WhatsAppApiClient } from './whatsapp-api.client';
+import { WhatsAppApiConfig } from './whatsapp-api.config';
 import { WhatsappOtpService } from './whatsapp-otp.service';
 
 @Module({
@@ -30,6 +32,8 @@ import { WhatsappOtpService } from './whatsapp-otp.service';
     AuthService,
     JwtStrategy,
     RateLimitService,
+    WhatsAppApiConfig,
+    WhatsAppApiClient,
     WhatsappOtpService,
     SavedGuestsService,
   ],
