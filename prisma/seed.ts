@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaClient, UserStatus } from '../src/generated/prisma/client';
 import { createPrismaPgAdapter } from '../src/prisma/pg-adapter';
 import * as bcrypt from 'bcrypt';
+import { seedCitiesFromDataset } from './lib/city-dataset';
 
 const prisma = new PrismaClient({
   adapter: createPrismaPgAdapter(process.env.DATABASE_URL!),
@@ -104,35 +105,6 @@ const PROPERTY_TAGS = [
   { code: 'PAY_AT_HOTEL', name: 'Pay At Hotel' },
 ] as const;
 
-const CITIES_WITH_AREAS = [
-  {
-    name: 'Guwahati',
-    slug: 'guwahati',
-    state: 'Assam',
-    areas: ['Dispur', 'Paltan Bazaar', 'Ulubari', 'Beltola', 'Six Mile', 'Pan Bazaar'],
-  },
-  {
-    name: 'Delhi',
-    slug: 'delhi',
-    state: 'Delhi',
-    areas: [
-      'Connaught Place',
-      'Dwarka',
-      'Chhatarpur',
-      'Karol Bagh',
-      'Aerocity',
-      'Paharganj',
-      'Nehru Place',
-    ],
-  },
-  {
-    name: 'Mumbai',
-    slug: 'mumbai',
-    state: 'Maharashtra',
-    areas: ['Andheri', 'Bandra', 'Colaba', 'Powai', 'Juhu', 'Lower Parel'],
-  },
-] as const;
-
 const MEMBERSHIP_PLANS = [
   {
     code: 'INDIVIDUAL',
@@ -218,27 +190,8 @@ async function main() {
     });
   }
 
-  for (const cityData of CITIES_WITH_AREAS) {
-    const city = await prisma.city.upsert({
-      where: { slug: cityData.slug },
-      update: { name: cityData.name, state: cityData.state },
-      create: {
-        name: cityData.name,
-        slug: cityData.slug,
-        state: cityData.state,
-        country: 'India',
-      },
-    });
-
-    for (const areaName of cityData.areas) {
-      const slug = areaName.toLowerCase().replace(/[^\w]+/g, '-');
-      await prisma.area.upsert({
-        where: { cityId_slug: { cityId: city.id, slug } },
-        update: { name: areaName },
-        create: { cityId: city.id, name: areaName, slug },
-      });
-    }
-  }
+  const { cities, areas } = await seedCitiesFromDataset(prisma);
+  console.log(`Seeded ${cities} cities and ${areas} areas from alterstay-city-dataset.csv`);
 
   await prisma.cancellationPolicy.upsert({
     where: { name: 'Flexible' },

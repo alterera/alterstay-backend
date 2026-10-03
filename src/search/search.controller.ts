@@ -115,7 +115,15 @@ export class SearchController {
   }
 
   @Get('cities')
-  listCities() {
+  listCities(@Query('q') q?: string, @Query('limit') limit?: string) {
+    if (q !== undefined || limit !== undefined) {
+      const parsed = Number(limit);
+      return this.search.listCitySuggestions({
+        q,
+        limit: Number.isFinite(parsed) ? parsed : undefined,
+      });
+    }
+
     return this.search.listCities();
   }
 }

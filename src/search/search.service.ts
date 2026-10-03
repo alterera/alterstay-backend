@@ -11,6 +11,30 @@ import {
   SortOption,
 } from './search.utils';
 
+export type CitySuggestion = {
+  name: string;
+  slug: string;
+  state: string | null;
+};
+
+const FEATURED_CITY_SLUGS = [
+  'mumbai',
+  'delhi',
+  'bangalore',
+  'hyderabad',
+  'chennai',
+  'kolkata',
+  'pune',
+  'ahmedabad',
+  'jaipur',
+  'lucknow',
+  'chandigarh',
+  'goa',
+  'kochi',
+  'indore',
+  'guwahati',
+] as const;
+
 export type SearchQuery = {
   city?: string;
   checkIn?: string;
@@ -71,6 +95,57 @@ export class SearchService {
       orderBy: { name: 'asc' },
       select: { id: true, code: true, name: true },
     });
+  }
+
+  async listCitySuggestions(options?: {
+    q?: string;
+    limit?: number;
+  }): Promise<CitySuggestion[]> {
+    const limit = Math.min(Math.max(options?.limit ?? 15, 1), 50);
+    const q = options?.q?.trim();
+
+    if (q) {
+      return this.prisma.city.findMany({
+        where: {
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { state: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        orderBy: { name: 'asc' },
+        take: limit,
+        select: { name: true, slug: true, state: true },
+      });
+    }
+
+    const featured = await this.prisma.city.findMany({
+      where: { slug: { in: [...FEATURED_CITY_SLUGS] } },
+      select: { name: true, slug: true, state: true },
+    });
+
+    const order = new Map<string, number>(
+      FEATURED_CITY_SLUGS.map((slug, index) => [slug, index]),
+    );
+    featured.sort(
+      (a, b) => (order.get(a.slug) ?? 999) - (order.get(b.slug) ?? 999),
+    );
+
+    if (featured.length >= limit) {
+      return featured.slice(0, limit);
+    }
+
+    const existingSlugs = new Set(featured.map((city) => city.slug));
+    const remainder = await this.prisma.city.findMany({
+      where:
+        existingSlugs.size > 0
+          ? { slug: { notIn: [...existingSlugs] } }
+          : undefined,
+      orderBy: { name: 'asc' },
+      take: limit - featured.length,
+      select: { name: true, slug: true, state: true },
+    });
+
+    return [...featured, ...remainder];
   }
 
   async listCities() {
