@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Prisma } from '../../prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { slugify } from '../admin.utils';
+import { RATE_PLAN_NAME_PRESETS } from '../rate-plans/rate-plan-names';
 import {
   CreateAmenityDto,
   CreateAreaDto,
@@ -163,6 +164,14 @@ export class AdminCatalogController {
         status: 'ACTIVE',
       },
     });
+  }
+
+  @Get('rate-plan-name-presets')
+  listRatePlanNamePresets() {
+    return {
+      presets: [...RATE_PLAN_NAME_PRESETS],
+      allowCustom: true,
+    };
   }
 
   @Get('meal-plans')

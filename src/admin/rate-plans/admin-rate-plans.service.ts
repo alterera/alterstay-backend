@@ -56,7 +56,7 @@ export class AdminRatePlansService {
       data: {
         propertyId,
         roomTypeId: dto.roomTypeId,
-        name: dto.name,
+        name: dto.name.trim(),
         description: dto.description,
         mealPlanId: dto.mealPlanId,
         cancellationPolicyId: dto.cancellationPolicyId,
@@ -84,9 +84,14 @@ export class AdminRatePlansService {
       );
     }
 
+    const data = { ...dto };
+    if (data.name !== undefined) {
+      data.name = data.name.trim();
+    }
+
     return this.prisma.ratePlan.update({
       where: { id: ratePlanId },
-      data: dto,
+      data,
       include: {
         roomType: true,
         mealPlan: true,
