@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AlterCashModule } from '../alter-cash/alter-cash.module';
 import { BookingsModule } from '../bookings/bookings.module';
+import { PricingModule } from '../pricing/pricing.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AdminBookingsController } from './bookings/admin-bookings.controller';
 import { AdminBookingsService } from './bookings/admin-bookings.service';
@@ -13,12 +14,13 @@ import { AdminRatePlansController } from './rate-plans/admin-rate-plans.controll
 import { AdminRatePlansService } from './rate-plans/admin-rate-plans.service';
 import { AdminReviewsController } from './reviews/admin-reviews.controller';
 import { AdminRoomTypesController } from './room-types/admin-room-types.controller';
+import { AdminRoomTypeRatesService } from './room-types/admin-room-type-rates.service';
 import { AdminRoomTypesService } from './room-types/admin-room-types.service';
 import { AdminRoomsController } from './rooms/admin-rooms.controller';
 import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
-  imports: [PrismaModule, UploadsModule, BookingsModule, AlterCashModule],
+  imports: [PrismaModule, UploadsModule, BookingsModule, AlterCashModule, PricingModule],
   controllers: [
     AdminCatalogController,
     AdminBookingsController,
@@ -34,6 +36,7 @@ import { UploadsModule } from './uploads/uploads.module';
     AdminInventoryService,
     AdminRatePlansService,
     AdminRoomTypesService,
+    AdminRoomTypeRatesService,
     AdminBookingsService,
   ],
 })

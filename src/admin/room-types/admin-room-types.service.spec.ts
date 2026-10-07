@@ -26,7 +26,10 @@ describe('AdminRoomTypesService', () => {
       },
       reservationItem: { count: jest.fn() },
     };
-    service = new AdminRoomTypesService(prisma as unknown as PrismaService);
+    service = new AdminRoomTypesService(
+      prisma as unknown as PrismaService,
+      { syncForRoomType: jest.fn() } as never,
+    );
   });
 
   describe('remove', () => {

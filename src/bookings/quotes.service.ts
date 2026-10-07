@@ -150,12 +150,7 @@ export class QuotesService {
         validated.ratePlan.id,
         validated.nights,
         validated.rooms,
-        membershipContext
-          ? {
-              planCode: membershipContext.planCode,
-              discountPercent: membershipContext.discountPercent,
-            }
-          : undefined,
+        membershipContext ? { membership: membershipContext } : undefined,
       ),
     );
 
@@ -208,12 +203,7 @@ export class QuotesService {
         validated.ratePlan.id,
         validated.nights,
         validated.rooms,
-        membershipContext
-          ? {
-              planCode: membershipContext.planCode,
-              discountPercent: membershipContext.discountPercent,
-            }
-          : undefined,
+        membershipContext ? { membership: membershipContext } : undefined,
       ),
     );
 
@@ -252,6 +242,8 @@ export class QuotesService {
 
     return {
       subtotal: quote.subtotal,
+      gstAmount: quote.gstAmount,
+      platformFee: quote.platformFee,
       taxAmount: quote.taxAmount,
       discountAmount: quote.discountAmount,
       totalAmount: quote.totalAmount,
@@ -261,6 +253,12 @@ export class QuotesService {
       available: availability.available,
       remainingRooms: availability.remainingRooms,
       expiresAt,
+      nightly: quote.nightly.map((night) => ({
+        date: night.date.toISOString().slice(0, 10),
+        barPrice: night.barPrice,
+        finalPrice: night.finalPrice,
+        adjustments: night.adjustments,
+      })),
       coinEarnPreview: quote.coinEarnPreview,
       coinsRedeemed: quote.coinsRedeemed,
     };

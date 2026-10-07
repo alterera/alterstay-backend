@@ -3,6 +3,7 @@ import { Prisma, PropertyStatus, ReviewStatus } from '../prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { eachNight } from '../admin/admin.utils';
 import { S3Service } from '../admin/uploads/s3.service';
+import { isRateProductCode } from '../pricing/rate-product.catalog';
 import { PricingService } from '../pricing/pricing.service';
 import {
   matchesPriceBucket,
@@ -54,6 +55,9 @@ export type SearchQuery = {
 
 type AvailabilityResult = {
   minTotalPrice: number | null;
+  minGstAmount: number | null;
+  minPlatformFee: number | null;
+  minTaxAmount: number | null;
   availableRoomTypeCount: number;
   available: boolean;
   remainingRooms: number | null;
@@ -170,9 +174,9 @@ export class SearchService {
         let minPriceFrom: number | null = null;
 
         if (propertyIds.length > 0) {
-          const pricing = await this.prisma.ratePrice.aggregate({
+          const pricing = await this.prisma.roomTypeDailyRate.aggregate({
             where: {
-              ratePlan: {
+              roomType: {
                 propertyId: { in: propertyIds },
                 status: 'ACTIVE',
               },
@@ -229,10 +233,10 @@ export class SearchService {
           take: 1,
           select: { url: true },
         },
-        ratePlans: {
+        roomTypes: {
           where: { status: 'ACTIVE' },
           select: {
-            prices: {
+            dailyRates: {
               orderBy: { basePrice: 'asc' },
               take: 1,
               select: { basePrice: true },
@@ -259,9 +263,11 @@ export class SearchService {
 
     return Promise.all(
       properties.map(async (property) => {
-        const priceCandidates = property.ratePlans
-          .map((plan) =>
-            plan.prices[0] ? Number(plan.prices[0].basePrice) : null,
+        const priceCandidates = property.roomTypes
+          .map((roomType) =>
+            roomType.dailyRates[0]
+              ? Number(roomType.dailyRates[0].basePrice)
+              : null,
           )
           .filter((value): value is number => value != null);
         const startsFrom =
@@ -323,15 +329,16 @@ export class SearchService {
             inventory: nights.length
               ? { where: { date: { in: nights } } }
               : false,
+            dailyRates: nights.length
+              ? { where: { date: { in: nights } } }
+              : false,
             ratePlans: {
-              where: { status: 'ACTIVE' },
+              where: { status: 'ACTIVE', productCode: { not: null } },
               include: {
                 mealPlan: true,
                 cancellationPolicy: true,
-                prices: nights.length
-                  ? { where: { date: { in: nights } } }
-                  : false,
               },
+              orderBy: { productCode: 'asc' },
             },
           },
           orderBy: { name: 'asc' },
@@ -366,11 +373,17 @@ export class SearchService {
 
           const ratePlans = roomType.ratePlans
             .map((plan) => {
+              const productMeta = plan.productCode
+                ? this.pricing.productMeta(plan.productCode)
+                : null;
+
               if (!nights.length) {
                 return {
                   id: plan.id,
+                  productCode: plan.productCode,
                   name: plan.name,
-                  description: plan.description,
+                  guestLabel: productMeta?.guestLabel ?? plan.name,
+                  description: plan.description ?? productMeta?.guestLabel ?? null,
                   mealPlan: plan.mealPlan
                     ? { code: plan.mealPlan.code, name: plan.mealPlan.name }
                     : null,
@@ -380,6 +393,7 @@ export class SearchService {
                         description: plan.cancellationPolicy.description,
                       }
                     : null,
+                  isRefundable: productMeta?.refundable ?? null,
                   totalPrice: null as number | null,
                   pricePerNight: null as number | null,
                   estimatedTaxes: null as number | null,
@@ -387,16 +401,27 @@ export class SearchService {
                 };
               }
 
-              const prices = this.pricing.matchNights(plan.prices, nights);
-              if (!prices) return null;
+              if (!plan.productCode || !isRateProductCode(plan.productCode)) {
+                return null;
+              }
 
-              const quote = this.pricing.computeQuote(prices, 1);
+              const quote = this.pricing.quoteFromRoomTypeRates(
+                roomType.dailyRates,
+                nights,
+                roomsNeeded,
+                plan.productCode,
+                property.pricingConfigJson,
+              );
+              if (!quote) return null;
+
               const totalPrice = quote.subtotal;
 
               return {
                 id: plan.id,
+                productCode: plan.productCode,
                 name: plan.name,
-                description: plan.description,
+                guestLabel: productMeta?.guestLabel ?? plan.name,
+                description: plan.description ?? productMeta?.guestLabel ?? null,
                 mealPlan: plan.mealPlan
                   ? { code: plan.mealPlan.code, name: plan.mealPlan.name }
                   : null,
@@ -406,10 +431,13 @@ export class SearchService {
                       description: plan.cancellationPolicy.description,
                     }
                   : null,
+                isRefundable: productMeta?.refundable ?? null,
                 totalPrice,
                 pricePerNight: Math.round(totalPrice / nightsCount),
                 estimatedTaxes: quote.taxAmount,
-                currency: 'INR' as const,
+                estimatedGst: quote.gstAmount,
+                estimatedPlatformFee: quote.platformFee,
+                currency: quote.currency,
               };
             })
             .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
@@ -441,13 +469,18 @@ export class SearchService {
       )
     ).filter((room): room is NonNullable<typeof room> => room !== null);
 
-    const allMinPrices = roomTypes
-      .map((rt) => rt.minPricePerNight)
-      .filter((p): p is number => p !== null);
+    const propertyAvailability = this.computeAvailability(
+      property.roomTypes,
+      nights,
+      guestCount,
+      roomsNeeded,
+      property.pricingConfigJson,
+    );
+    const minTotalPrice = propertyAvailability.minTotalPrice;
     const minPricePerNight =
-      allMinPrices.length > 0 ? Math.min(...allMinPrices) : null;
-    const minTotalPrice =
-      minPricePerNight !== null ? minPricePerNight * nightsCount : null;
+      minTotalPrice !== null && nightsCount > 0
+        ? Math.round(minTotalPrice / nightsCount)
+        : null;
 
     const reviewPayload = await this.buildPropertyReviewPayload(property.id);
 
@@ -505,10 +538,9 @@ export class SearchService {
       roomTypes,
       minTotalPrice,
       minPricePerNight,
-      estimatedTaxes:
-        minTotalPrice !== null
-          ? this.pricing.estimateTaxes(minTotalPrice)
-          : null,
+      estimatedTaxes: propertyAvailability.minTaxAmount,
+      estimatedGst: propertyAvailability.minGstAmount,
+      estimatedPlatformFee: propertyAvailability.minPlatformFee,
       currency: 'INR',
       nights: nightsCount,
     };
@@ -518,7 +550,8 @@ export class SearchService {
     roomType: Prisma.RoomTypeGetPayload<{
       include: {
         inventory: true;
-        ratePlans: { include: { prices: true } };
+        dailyRates: true;
+        ratePlans: true;
       };
     }>,
     nights: Date[],
@@ -545,13 +578,11 @@ export class SearchService {
 
     if (!inventoryOk) return { available: false };
 
-    const hasPricing = roomType.ratePlans.some((plan) =>
-      nights.every((night) =>
-        plan.prices.some((p) => p.date.getTime() === night.getTime()),
-      ),
+    const hasPricing = nights.every((night) =>
+      roomType.dailyRates.some((p) => p.date.getTime() === night.getTime()),
     );
 
-    return { available: hasPricing };
+    return { available: hasPricing && roomType.ratePlans.length > 0 };
   }
 
   async searchProperties(query: SearchQuery) {
@@ -602,13 +633,11 @@ export class SearchService {
             inventory: nights.length
               ? { where: { date: { in: nights } } }
               : false,
+            dailyRates: nights.length
+              ? { where: { date: { in: nights } } }
+              : false,
             ratePlans: {
-              where: { status: 'ACTIVE' },
-              include: {
-                prices: nights.length
-                  ? { where: { date: { in: nights } } }
-                  : false,
-              },
+              where: { status: 'ACTIVE', productCode: { not: null } },
             },
           },
         },
@@ -624,6 +653,7 @@ export class SearchService {
             nights,
             guestCount,
             roomsNeeded,
+            property.pricingConfigJson,
           );
 
           if (nights.length && !availability.available) return [];
@@ -666,10 +696,9 @@ export class SearchService {
               remainingRooms: availability.remainingRooms,
               minTotalPrice,
               minPricePerNight,
-              estimatedTaxes:
-                minTotalPrice !== null
-                  ? this.pricing.estimateTaxes(minTotalPrice)
-                  : null,
+              estimatedTaxes: availability.minTaxAmount,
+              estimatedGst: availability.minGstAmount,
+              estimatedPlatformFee: availability.minPlatformFee,
               currency: 'INR',
               nights: nights.length,
               availableRoomTypeCount: availability.availableRoomTypeCount,
@@ -716,17 +745,22 @@ export class SearchService {
       Prisma.RoomTypeGetPayload<{
         include: {
           inventory: true;
-          ratePlans: { include: { prices: true } };
+          dailyRates: true;
+          ratePlans: true;
         };
       }>
     >,
     nights: Date[],
     guestCount: number,
     roomsNeeded: number,
+    pricingConfigJson: unknown = null,
   ): AvailabilityResult {
     if (!nights.length) {
       return {
         minTotalPrice: null,
+        minGstAmount: null,
+        minPlatformFee: null,
+        minTaxAmount: null,
         availableRoomTypeCount: roomTypes.length,
         available: roomTypes.length > 0,
         remainingRooms: null,
@@ -734,7 +768,12 @@ export class SearchService {
     }
 
     const minOccupancy = Math.ceil(guestCount / roomsNeeded);
-    let bestPrice: number | null = null;
+    let bestQuote: {
+      subtotal: number;
+      gstAmount: number;
+      platformFee: number;
+      taxAmount: number;
+    } | null = null;
     let availableRoomTypeCount = 0;
     let remainingRooms: number | null = null;
 
@@ -753,13 +792,31 @@ export class SearchService {
       });
       if (!inventoryOk) continue;
 
-      let roomTypeBest: number | null = null;
+      let roomTypeBest: {
+        subtotal: number;
+        gstAmount: number;
+        platformFee: number;
+        taxAmount: number;
+      } | null = null;
       for (const plan of roomType.ratePlans) {
-        const prices = this.pricing.matchNights(plan.prices, nights);
-        if (!prices) continue;
-        const total = this.pricing.computeQuote(prices, 1).subtotal;
-        if (roomTypeBest === null || total < roomTypeBest) {
-          roomTypeBest = total;
+        if (!plan.productCode || !isRateProductCode(plan.productCode)) {
+          continue;
+        }
+        const quote = this.pricing.quoteFromRoomTypeRates(
+          roomType.dailyRates,
+          nights,
+          roomsNeeded,
+          plan.productCode,
+          pricingConfigJson,
+        );
+        if (!quote) continue;
+        if (roomTypeBest === null || quote.subtotal < roomTypeBest.subtotal) {
+          roomTypeBest = {
+            subtotal: quote.subtotal,
+            gstAmount: quote.gstAmount,
+            platformFee: quote.platformFee,
+            taxAmount: quote.taxAmount,
+          };
         }
       }
 
@@ -770,14 +827,17 @@ export class SearchService {
           remainingRooms === null
             ? roomTypeRemaining
             : remainingRooms + roomTypeRemaining;
-        if (bestPrice === null || roomTypeBest < bestPrice) {
-          bestPrice = roomTypeBest;
+        if (bestQuote === null || roomTypeBest.subtotal < bestQuote.subtotal) {
+          bestQuote = roomTypeBest;
         }
       }
     }
 
     return {
-      minTotalPrice: bestPrice,
+      minTotalPrice: bestQuote?.subtotal ?? null,
+      minGstAmount: bestQuote?.gstAmount ?? null,
+      minPlatformFee: bestQuote?.platformFee ?? null,
+      minTaxAmount: bestQuote?.taxAmount ?? null,
       availableRoomTypeCount,
       available: availableRoomTypeCount > 0,
       remainingRooms,

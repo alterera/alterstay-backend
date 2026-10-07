@@ -12,10 +12,17 @@ import { uniqueSlug } from '../../common/utils/slug.util';
 import { S3Service } from '../uploads/s3.service';
 import { DEFAULT_ORG_ID } from '../admin.utils';
 import {
+  parsePricingConfig,
+  serializePricingConfig,
+  type PricingConfigV1,
+} from '../../pricing/pricing-config.schema';
+import { RatePlanSyncService } from '../../pricing/rate-plan-sync.service';
+import {
   CreatePropertyDto,
   UpdatePropertyAmenitiesDto,
   UpdatePropertyDto,
   UpdatePropertyPoliciesDto,
+  UpdatePropertyPricingConfigDto,
   UpdatePropertyRestrictionsDto,
   UpdatePropertyStatusDto,
 } from '../dto/admin.dto';
@@ -39,6 +46,7 @@ export class AdminPropertiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly s3: S3Service,
+    private readonly ratePlanSync: RatePlanSyncService,
   ) {}
 
   async list() {
@@ -382,5 +390,43 @@ export class AdminPropertiesService {
       );
     }
     return { success: true };
+  }
+
+  async getPricingConfig(propertyId: string): Promise<PricingConfigV1> {
+    const property = await this.prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { pricingConfigJson: true },
+    });
+    if (!property) throw new NotFoundException('Property not found');
+    return parsePricingConfig(property.pricingConfigJson);
+  }
+
+  async updatePricingConfig(
+    propertyId: string,
+    dto: UpdatePropertyPricingConfigDto,
+  ): Promise<PricingConfigV1> {
+    await this.assertExists(propertyId);
+    const config = serializePricingConfig({
+      version: 1,
+      weekendDays: dto.weekendDays,
+      weekendMultiplier: dto.weekendMultiplier,
+      minNightlyPrice: dto.minNightlyPrice ?? null,
+      maxNightlyPrice: dto.maxNightlyPrice ?? null,
+      platformFeeAmount: dto.platformFeeAmount,
+      breakfastUpliftPerNight: dto.breakfastUpliftPerNight,
+      halfBoardUpliftPerNight: dto.halfBoardUpliftPerNight,
+      fullBoardUpliftPerNight: dto.fullBoardUpliftPerNight,
+      nonRefundableDiscountPercent: dto.nonRefundableDiscountPercent,
+      enabledProductCodes: dto.enabledProductCodes,
+    });
+
+    await this.prisma.property.update({
+      where: { id: propertyId },
+      data: { pricingConfigJson: config },
+    });
+
+    await this.ratePlanSync.syncForProperty(propertyId);
+
+    return config;
   }
 }

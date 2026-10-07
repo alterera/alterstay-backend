@@ -258,6 +258,7 @@ export class BookingFixture {
         propertyId: this.propertyId,
         roomTypeId: this.roomTypeId,
         name: 'E2E Room Only',
+        productCode: 'EP_REFUNDABLE',
         status: 'ACTIVE',
       },
       select: { id: true },
@@ -274,9 +275,9 @@ export class BookingFixture {
       })),
     });
 
-    await this.prisma.ratePrice.createMany({
+    await this.prisma.roomTypeDailyRate.createMany({
       data: nights.map((date) => ({
-        ratePlanId: this.ratePlanId,
+        roomTypeId: this.roomTypeId,
         date,
         basePrice: nightlyRate,
         currency: 'INR',

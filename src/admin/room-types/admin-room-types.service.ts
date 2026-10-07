@@ -5,13 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RatePlanSyncService } from '../../pricing/rate-plan-sync.service';
 import { CreateRoomTypeDto, UpdateRoomTypeDto } from '../dto/admin.dto';
 
 const ROOM_TYPE_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
 
 @Injectable()
 export class AdminRoomTypesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ratePlanSync: RatePlanSyncService,
+  ) {}
 
   async listForProperty(propertyId: string) {
     return this.prisma.roomType.findMany({
@@ -24,7 +28,7 @@ export class AdminRoomTypesService {
   }
 
   async create(propertyId: string, dto: CreateRoomTypeDto) {
-    return this.prisma.roomType.create({
+    const roomType = await this.prisma.roomType.create({
       data: {
         propertyId,
         name: dto.name,
@@ -36,6 +40,9 @@ export class AdminRoomTypesService {
         sizeSqm: dto.sizeSqm,
       },
     });
+
+    await this.ratePlanSync.syncForRoomType(propertyId, roomType.id);
+    return roomType;
   }
 
   async update(

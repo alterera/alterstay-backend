@@ -31,6 +31,7 @@ describe('AdminPropertiesService.deleteImage', () => {
         propertyImage: { findFirst, delete: deleteRow },
       } as unknown as PrismaService,
       { extractObjectKey, deleteObject } as unknown as S3Service,
+      { syncForProperty: jest.fn() } as never,
     );
   });
 

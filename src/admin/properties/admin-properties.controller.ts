@@ -21,16 +21,21 @@ import {
   UpdatePropertyAmenitiesDto,
   UpdatePropertyDto,
   UpdatePropertyPoliciesDto,
+  UpdatePropertyPricingConfigDto,
   UpdatePropertyRestrictionsDto,
   UpdatePropertyStatusDto,
 } from '../dto/admin.dto';
+import { RatePlanSyncService } from '../../pricing/rate-plan-sync.service';
 import { AdminPropertiesService } from './admin-properties.service';
 
 @Controller('admin/properties')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('SUPER_ADMIN')
 export class AdminPropertiesController {
-  constructor(private readonly properties: AdminPropertiesService) {}
+  constructor(
+    private readonly properties: AdminPropertiesService,
+    private readonly ratePlanSync: RatePlanSyncService,
+  ) {}
 
   @Get()
   list() {
@@ -58,6 +63,26 @@ export class AdminPropertiesController {
     @Body() dto: UpdatePropertyStatusDto,
   ) {
     return this.properties.updateStatus(id, dto);
+  }
+
+  @Get(':id/pricing-config')
+  getPricingConfig(@Param('id') id: string) {
+    return this.properties.getPricingConfig(id);
+  }
+
+  @Patch(':id/pricing-config')
+  updatePricingConfig(
+    @Param('id') id: string,
+    @Body() dto: UpdatePropertyPricingConfigDto,
+  ) {
+    return this.properties.updatePricingConfig(id, dto);
+  }
+
+  @Post(':id/sync-rate-plans')
+  async syncRatePlans(@Param('id') id: string) {
+    await this.properties.getById(id);
+    await this.ratePlanSync.syncForProperty(id);
+    return { success: true };
   }
 
   @Put(':id/amenities')

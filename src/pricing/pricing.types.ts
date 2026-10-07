@@ -14,6 +14,31 @@ export type RatePriceLike = {
   closedToDeparture?: boolean;
 };
 
+export type PriceAdjustmentCode =
+  | 'weekend'
+  | 'holiday'
+  | 'lead_time'
+  | 'occupancy'
+  | 'meal_plan'
+  | 'non_refundable'
+  | 'floor'
+  | 'ceiling';
+
+export type PriceAdjustment = {
+  code: PriceAdjustmentCode;
+  label: string;
+  multiplier?: number;
+  amountDelta?: number;
+};
+
+export type ResolvedNightlyRate = {
+  date: Date;
+  barPrice: number;
+  finalPrice: number;
+  adjustments: PriceAdjustment[];
+};
+
+/** @deprecated Use ResolvedNightlyRate — kept for backward-compatible snapshots. */
 export type NightlyRate = {
   date: Date;
   basePrice: number;
@@ -34,10 +59,12 @@ export type CoinEarnPreview = {
 };
 
 export type Quote = {
-  nightly: NightlyRate[];
+  nightly: ResolvedNightlyRate[];
   nights: number;
   rooms: number;
   subtotal: number;
+  gstAmount: number;
+  platformFee: number;
   taxAmount: number;
   discountAmount: number;
   totalAmount: number;
@@ -54,4 +81,9 @@ export type PricingClient = Prisma.TransactionClient;
 export type MembershipPricingContext = {
   planCode: string;
   discountPercent: number;
+};
+
+export type ComputeQuoteOptions = {
+  platformFeeAmount?: number;
+  membership?: MembershipPricingContext;
 };

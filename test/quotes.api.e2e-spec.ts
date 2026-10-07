@@ -32,9 +32,13 @@ describe('Quotes API (e2e)', () => {
 
     expect(response.status).toBe(200);
     const expectedSubtotal = NIGHTLY * 2;
-    const expectedTax = Math.round(expectedSubtotal * 0.18);
+    const expectedGst = Math.round(expectedSubtotal * 0.18);
+    const expectedPlatformFee = 262;
+    const expectedTax = expectedGst + expectedPlatformFee;
     expect(response.body).toMatchObject({
       subtotal: expectedSubtotal,
+      gstAmount: expectedGst,
+      platformFee: expectedPlatformFee,
       taxAmount: expectedTax,
       totalAmount: expectedSubtotal + expectedTax,
       currency: 'INR',
@@ -44,6 +48,40 @@ describe('Quotes API (e2e)', () => {
 
     const holds = await fixture.holdsForFixture();
     expect(holds).toHaveLength(0);
+  });
+
+  it('matches property browse totalPrice with quote subtotal', async () => {
+    const property = await fixture.http.get(
+      `/search/properties/${fixture.propertySlug}`,
+    ).query({
+      checkIn: fixture.checkIn,
+      checkOut: fixture.checkOut,
+      adults: 2,
+      rooms: 1,
+    });
+
+    expect(property.status).toBe(200);
+
+    const roomType = property.body.roomTypes.find(
+      (rt: { id: string }) => rt.id === fixture.roomTypeId,
+    );
+    const ratePlan = roomType?.ratePlans.find(
+      (rp: { id: string }) => rp.id === fixture.ratePlanId,
+    );
+
+    const quote = await fixture.http.get('/quotes').query({
+      propertySlug: fixture.propertySlug,
+      roomTypeId: fixture.roomTypeId,
+      ratePlanId: fixture.ratePlanId,
+      checkIn: fixture.checkIn,
+      checkOut: fixture.checkOut,
+      rooms: 1,
+      adults: 2,
+    });
+
+    expect(quote.status).toBe(200);
+    expect(ratePlan?.totalPrice).toBe(quote.body.subtotal);
+    expect(ratePlan?.estimatedTaxes).toBe(quote.body.taxAmount);
   });
 
   it('creates an intent snapshot without inventory holds', async () => {

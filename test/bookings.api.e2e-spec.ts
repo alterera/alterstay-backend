@@ -50,13 +50,17 @@ describe('Bookings API (e2e)', () => {
       expect(response.status).toBe(201);
 
       const expectedSubtotal = NIGHTLY * 2 * 2; // 2 nights x 2 rooms
-      const expectedTax = Math.round(expectedSubtotal * 0.18);
+      const expectedGst = Math.round(expectedSubtotal * 0.18);
+      const expectedPlatformFee = 262;
+      const expectedTax = expectedGst + expectedPlatformFee;
 
       expect(response.body).toMatchObject({
         status: ReservationStatus.PAYMENT_PENDING,
         currency: 'INR',
         nights: 2,
         subtotal: expectedSubtotal,
+        gstAmount: expectedGst,
+        platformFee: expectedPlatformFee,
         taxAmount: expectedTax,
         discountAmount: 0,
         totalAmount: expectedSubtotal + expectedTax,
@@ -97,14 +101,23 @@ describe('Bookings API (e2e)', () => {
       expect(snapshot.propertySlug).toBe(fixture.propertySlug);
       expect(snapshot.taxRate).toBe(0.18);
       expect(snapshot.nights).toEqual([
-        { date: fixture.checkIn, basePrice: NIGHTLY },
-        expect.objectContaining({ basePrice: NIGHTLY }),
+        {
+          date: fixture.checkIn,
+          barPrice: NIGHTLY,
+          finalPrice: NIGHTLY,
+          adjustments: [],
+        },
+        expect.objectContaining({
+          barPrice: NIGHTLY,
+          finalPrice: NIGHTLY,
+        }),
       ]);
+      expect(snapshot.platformFee).toBe(262);
       expect(snapshot.quotedAt).toBeDefined();
 
       // Raise the published rate; the stored snapshot must not move.
-      await fixture.prisma.ratePrice.updateMany({
-        where: { ratePlanId: fixture.ratePlanId },
+      await fixture.prisma.roomTypeDailyRate.updateMany({
+        where: { roomTypeId: fixture.roomTypeId },
         data: { basePrice: 9999 },
       });
       const reread = await fixture.reservationByNumber(
@@ -112,8 +125,8 @@ describe('Bookings API (e2e)', () => {
       );
       expect(Number(reread!.items[0].subtotal)).toBe(NIGHTLY * 2);
 
-      await fixture.prisma.ratePrice.updateMany({
-        where: { ratePlanId: fixture.ratePlanId },
+      await fixture.prisma.roomTypeDailyRate.updateMany({
+        where: { roomTypeId: fixture.roomTypeId },
         data: { basePrice: NIGHTLY },
       });
     });

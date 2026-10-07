@@ -29,9 +29,9 @@ export class AdminRatePlansService {
         roomType: true,
         mealPlan: true,
         cancellationPolicy: true,
-        _count: { select: { reservationItems: true, prices: true } },
+        _count: { select: { reservationItems: true } },
       },
-      orderBy: { name: 'asc' },
+      orderBy: [{ roomType: { name: 'asc' } }, { productCode: 'asc' }],
     });
   }
 
@@ -42,31 +42,18 @@ export class AdminRatePlansService {
         roomType: true,
         mealPlan: true,
         cancellationPolicy: true,
-        _count: { select: { reservationItems: true, prices: true } },
+        _count: { select: { reservationItems: true } },
       },
     });
     if (!plan) throw new NotFoundException('Rate plan not found');
     return plan;
   }
 
+  /** @deprecated Rate plans are auto-generated from the product catalog. */
   async create(propertyId: string, dto: CreateRatePlanDto) {
-    await this.roomTypes.assertRoomType(propertyId, dto.roomTypeId);
-
-    return this.prisma.ratePlan.create({
-      data: {
-        propertyId,
-        roomTypeId: dto.roomTypeId,
-        name: dto.name.trim(),
-        description: dto.description,
-        mealPlanId: dto.mealPlanId,
-        cancellationPolicyId: dto.cancellationPolicyId,
-      },
-      include: {
-        roomType: true,
-        mealPlan: true,
-        cancellationPolicy: true,
-      },
-    });
+    throw new BadRequestException(
+      'Rate plans are auto-generated per room type. Create a room type or run sync-rate-plans instead.',
+    );
   }
 
   async update(
@@ -84,14 +71,17 @@ export class AdminRatePlansService {
       );
     }
 
-    const data = { ...dto };
+    const data: UpdateRatePlanDto = { ...dto };
     if (data.name !== undefined) {
       data.name = data.name.trim();
     }
 
     return this.prisma.ratePlan.update({
       where: { id: ratePlanId },
-      data,
+      data: {
+        status: data.status,
+        description: data.description,
+      },
       include: {
         roomType: true,
         mealPlan: true,
@@ -101,31 +91,22 @@ export class AdminRatePlansService {
   }
 
   async remove(propertyId: string, ratePlanId: string) {
-    await this.getById(propertyId, ratePlanId);
-
-    const bookingCount = await this.prisma.reservationItem.count({
-      where: { ratePlanId },
-    });
-    if (bookingCount > 0) {
-      throw new ConflictException(
-        'Cannot delete: this rate plan has booking history. Set status to INACTIVE instead.',
-      );
-    }
-
-    await this.prisma.ratePlan.delete({ where: { id: ratePlanId } });
-    return { success: true };
+    throw new BadRequestException(
+      'Rate plans cannot be deleted individually. Set status to INACTIVE or remove the room type.',
+    );
   }
 
+  /** Reads room-type BAR (single source of truth). */
   async listPrices(
     propertyId: string,
     ratePlanId: string,
     from?: string,
     to?: string,
   ) {
-    await this.getById(propertyId, ratePlanId);
+    const plan = await this.getById(propertyId, ratePlanId);
 
-    const where: { ratePlanId: string; date?: { gte?: Date; lt?: Date } } = {
-      ratePlanId,
+    const where: { roomTypeId: string; date?: { gte?: Date; lt?: Date } } = {
+      roomTypeId: plan.roomTypeId,
     };
     if (from || to) {
       where.date = {};
@@ -133,33 +114,34 @@ export class AdminRatePlansService {
       if (to) where.date.lt = parseIsoDate(to);
     }
 
-    return this.prisma.ratePrice.findMany({
+    return this.prisma.roomTypeDailyRate.findMany({
       where,
       orderBy: { date: 'asc' },
     });
   }
 
+  /** Writes room-type BAR — applies to all sell products on this room type. */
   async upsertPrices(
     propertyId: string,
     ratePlanId: string,
     dto: UpsertRatePricesDto,
   ) {
-    await this.getById(propertyId, ratePlanId);
+    const plan = await this.getById(propertyId, ratePlanId);
     const nights = assertDateRange(dto.startDate, dto.endDate);
     const currency = dto.currency ?? 'INR';
 
     await this.prisma.$transaction(
       nights.map((date) =>
-        this.prisma.ratePrice.upsert({
+        this.prisma.roomTypeDailyRate.upsert({
           where: {
-            ratePlanId_date: { ratePlanId, date },
+            roomTypeId_date: { roomTypeId: plan.roomTypeId, date },
           },
           update: {
             basePrice: dto.basePrice,
             currency,
           },
           create: {
-            ratePlanId,
+            roomTypeId: plan.roomTypeId,
             date,
             basePrice: dto.basePrice,
             currency,
@@ -177,27 +159,27 @@ export class AdminRatePlansService {
     startDate: string,
     endDate: string,
   ) {
-    await this.getById(propertyId, ratePlanId);
+    const plan = await this.getById(propertyId, ratePlanId);
     const nights = assertDateRange(startDate, endDate);
     const rangeStart = parseIsoDate(startDate);
     const rangeEnd = parseIsoDate(endDate);
 
     const overlapping = await this.prisma.reservationItem.count({
       where: {
-        ratePlanId,
+        roomTypeId: plan.roomTypeId,
         checkIn: { lt: rangeEnd },
         checkOut: { gt: rangeStart },
       },
     });
     if (overlapping > 0) {
       throw new ConflictException(
-        'Cannot delete prices: bookings exist for this rate plan in the selected date range.',
+        'Cannot delete prices: bookings exist for this room type in the selected date range.',
       );
     }
 
-    const result = await this.prisma.ratePrice.deleteMany({
+    const result = await this.prisma.roomTypeDailyRate.deleteMany({
       where: {
-        ratePlanId,
+        roomTypeId: plan.roomTypeId,
         date: { in: nights },
       },
     });

@@ -14,6 +14,10 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PropertyStatus } from '../../prisma/client';
+import {
+  RATE_PRODUCT_CODES,
+  type RateProductCode,
+} from '../../pricing/rate-product.catalog';
 
 export class AddressDto {
   @IsString()
@@ -387,6 +391,69 @@ export class CreateRatePlanDto {
 }
 
 export class UpsertRatePricesDto {
+  @IsString()
+  startDate!: string;
+
+  @IsString()
+  endDate!: string;
+
+  @IsNumber()
+  @Min(0)
+  basePrice!: number;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
+}
+
+export class UpdatePropertyPricingConfigDto {
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  weekendDays!: number[];
+
+  @IsNumber()
+  @Min(0.01)
+  weekendMultiplier!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  minNightlyPrice?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  maxNightlyPrice?: number | null;
+
+  @IsNumber()
+  @Min(0)
+  platformFeeAmount!: number;
+
+  @IsNumber()
+  @Min(0)
+  breakfastUpliftPerNight!: number;
+
+  @IsNumber()
+  @Min(0)
+  halfBoardUpliftPerNight!: number;
+
+  @IsNumber()
+  @Min(0)
+  fullBoardUpliftPerNight!: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  nonRefundableDiscountPercent!: number;
+
+  @IsArray()
+  @IsIn(RATE_PRODUCT_CODES, { each: true })
+  enabledProductCodes!: RateProductCode[];
+}
+
+export class UpsertRoomTypeRatesDto {
   @IsString()
   startDate!: string;
 

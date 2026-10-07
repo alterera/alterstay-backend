@@ -202,6 +202,19 @@ async function main() {
     },
   });
 
+  await prisma.cancellationPolicy.upsert({
+    where: { name: 'Non-refundable' },
+    update: {
+      description:
+        'No cancellation or modification after booking. Full prepayment required.',
+    },
+    create: {
+      name: 'Non-refundable',
+      description:
+        'No cancellation or modification after booking. Full prepayment required.',
+    },
+  });
+
   await prisma.organization.upsert({
     where: { id: '00000000-0000-4000-8000-000000000001' },
     update: { name: 'AlterStays Ops' },
