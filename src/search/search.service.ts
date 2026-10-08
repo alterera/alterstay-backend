@@ -444,6 +444,11 @@ export class SearchService {
 
           if (nights.length && ratePlans.length === 0) return null;
 
+          const roomsAvailable = this.computeMinAvailableRooms(
+            roomType,
+            nights,
+          );
+
           return {
             id: roomType.id,
             name: roomType.name,
@@ -456,6 +461,7 @@ export class SearchService {
             imageUrls: roomImageUrls,
             amenities: roomType.amenities.map((a) => a.amenity.name),
             ratePlans,
+            roomsAvailable,
             minPricePerNight:
               ratePlans.length > 0
                 ? Math.min(
@@ -583,6 +589,28 @@ export class SearchService {
     );
 
     return { available: hasPricing && roomType.ratePlans.length > 0 };
+  }
+
+  /** Minimum free rooms across all nights in the stay (for scarcity messaging). */
+  private computeMinAvailableRooms(
+    roomType: Prisma.RoomTypeGetPayload<{
+      include: { inventory: true };
+    }>,
+    nights: Date[],
+  ): number | null {
+    if (!nights.length || !roomType.inventory?.length) return null;
+
+    let minFree = Infinity;
+    for (const night of nights) {
+      const row = roomType.inventory.find(
+        (inv) => inv.date.getTime() === night.getTime(),
+      );
+      if (!row) return null;
+      const free = row.totalRooms - row.blockedRooms - row.soldRooms;
+      minFree = Math.min(minFree, free);
+    }
+
+    return minFree === Infinity ? null : minFree;
   }
 
   async searchProperties(query: SearchQuery) {
